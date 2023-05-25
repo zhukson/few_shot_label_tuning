@@ -190,8 +190,7 @@ def label_tuning_pick2(
 
     text_embeddings = tf.constant(text_embeddings)
     text_labels = tf.constant(text_labels)
-    label_embeddings = tf.Variable(label_embeddings)  # Variable for auto gradient
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    label_embeddings = tf.constant(label_embeddings)
 
     for step in range(n_steps):
         for idx1, idx2 in combinations(range(text_embeddings.shape[0]), 2):
@@ -206,12 +205,11 @@ def label_tuning_pick2(
                 s_y1_x2 = tf.reduce_sum(y1 * text_embeddings[idx2]) / (tf.norm(y1) * tf.norm(text_embeddings[idx2]))
                 s_y2_x1 = tf.reduce_sum(y2 * text_embeddings[idx1]) / (tf.norm(y2) * tf.norm(text_embeddings[idx1]))
                 if tf.argmax(text_labels[idx1]) != tf.argmax(text_labels[idx2]):
-                    loss = -(s_y1_x2 + s_y2_x1) + reg_coefficient * tf.norm(label_embeddings)
+                    loss = -(s_y1_x2 + s_y2_x1)
                 else:
-                    loss = (s_y1_x2 + s_y2_x1) + reg_coefficient * tf.norm(label_embeddings)
-
-            gradients = tape.gradient(loss, label_embeddings)
-            optimizer.apply_gradients(zip([gradients], [label_embeddings]))
+                    loss = (s_y1_x2 + s_y2_x1)
+                gradient = tape.gradient(loss, label_embeddings)
+                label_embeddings = label_embeddings - (learning_rate * gradient)
 
     return label_embeddings.numpy()
 
