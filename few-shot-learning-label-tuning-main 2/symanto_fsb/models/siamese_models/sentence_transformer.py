@@ -16,6 +16,7 @@ from typing import Dict, List, Mapping, Text
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import torch
 
 from models.siamese_models import (
     Model,
@@ -44,6 +45,9 @@ def get_example_labels(
 class SentenceTransformerModel(Model):
     def __init__(self, model_config: dict):
         self.model = SentenceTransformer(model_config["model"])
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+        print("device = ", self.device)
         self.precomputed_embeddings: Dict[str, np.ndarray] = {}
 
     def _encode_batch(self, text: List[Text]) -> np.ndarray:
