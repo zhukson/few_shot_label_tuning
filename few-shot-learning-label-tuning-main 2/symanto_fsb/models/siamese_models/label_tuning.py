@@ -18,6 +18,7 @@ from typing import List, Optional
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import f1_score
+from itertools import combinations
 
 _NEG_INFINITY = tf.float32.min
 
@@ -152,12 +153,6 @@ def label_tuning(
     label_embeddings = label_embeddings.numpy()
     return label_embeddings
 
-
-import tensorflow as tf
-import numpy as np
-from itertools import combinations
-
-
 def label_tuning_pick2(
         text_embeddings: np.ndarray,
         text_labels: np.ndarray,
@@ -169,20 +164,20 @@ def label_tuning_pick2(
         **kwargs,
 ) -> np.ndarray:
     """
-    思路：每次从text_embedding取两个sample，假设我们有N个sample，一共有CN2个组合，然后根据两个sample的label，fine tuning各自的label embedding。
-    finetune的objective function：
-        1. if two sample X1, X2 don't has the same label, J1 = - s(Y1, X2), J2 = - s(Y2, X1)
-        2. if two sample X1, X2 has the same label, J1 = s(Y1, X2), J2 = s(Y2, X1)
-        假设J的gradient是 J'
-        Y1, Y2可以这样更新：Y1 = Y1 + a*J1', Y2 = Y2 + b*J2'
-    With N as number of examples, K as number of classes, k as embedding dimension.
-    Args:
-        'text_embeddings': float[N,k] of embedded texts
-        'text_labels': float[N,K] class score for each example.
-        'label_embeddings': float[K,k] class embeddings
-    Returns:
-        float[K,k] updated class embeddings
-    """
+        思路：每次从text_embedding取两个sample，假设我们有N个sample，一共有CN2个组合，然后根据两个sample的label，fine tuning各自的label embedding。
+        finetune的objective function：
+            1. if two sample X1, X2 don't has the same label, J1 = - s(Y1, X2), J2 = - s(Y2, X1)
+            2. if two sample X1, X2 has the same label, J1 = s(Y1, X2), J2 = s(Y2, X1)
+            假设J的gradient是 J'
+            Y1, Y2可以这样更新：Y1 = Y1 + learning_rate*J1', Y2 = Y2 + *J2'
+        With N as number of examples, K as number of classes, k as embedding dimension.
+        Args:
+            'text_embeddings': float[N,k] of embedded texts
+            'text_labels': float[N,K] class score for each example.
+            'label_embeddings': float[K,k] class embeddings
+        Returns:
+            float[K,k] updated class embeddings
+        """
     if text_embeddings.shape[0] == 0:
         raise ValueError(text_embeddings.shape)
     if label_embeddings.shape[0] == 0:
@@ -190,26 +185,28 @@ def label_tuning_pick2(
 
     text_embeddings = tf.constant(text_embeddings)
     text_labels = tf.constant(text_labels)
-    label_embeddings = tf.constant(label_embeddings)
+    label_embeddings = tf.Variable(label_embeddings)  # Variable for in-place updates
+    optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
 
     for step in range(n_steps):
         for idx1, idx2 in combinations(range(text_embeddings.shape[0]), 2):
             with tf.GradientTape() as tape:
-                tape.watch(label_embeddings)
-
                 # Compute cosine similarity
-                # get the index of embedding y1 and y2
-                y1 = tf.nn.embedding_lookup(label_embeddings, tf.argmax(text_labels[idx1]))
-                y2 = tf.nn.embedding_lookup(label_embeddings, tf.argmax(text_labels[idx2]))
-                # compute the similarity between y1 x2 and y2 x1
+                y1_idx = tf.argmax(text_labels[idx1])
+                y2_idx = tf.argmax(text_labels[idx2])
+                y1 = tf.nn.embedding_lookup(label_embeddings, y1_idx)
+                y2 = tf.nn.embedding_lookup(label_embeddings, y2_idx)
+
                 s_y1_x2 = tf.reduce_sum(y1 * text_embeddings[idx2]) / (tf.norm(y1) * tf.norm(text_embeddings[idx2]))
                 s_y2_x1 = tf.reduce_sum(y2 * text_embeddings[idx1]) / (tf.norm(y2) * tf.norm(text_embeddings[idx1]))
-                if tf.argmax(text_labels[idx1]) != tf.argmax(text_labels[idx2]):
-                    loss = -(s_y1_x2 + s_y2_x1)
+
+                if y1_idx != y2_idx:
+                    loss = s_y1_x2 + s_y2_x1
                 else:
-                    loss = (s_y1_x2 + s_y2_x1)
-                gradient = tape.gradient(loss, label_embeddings)
-                label_embeddings = label_embeddings - (learning_rate * gradient)
+                    loss = -(s_y1_x2 + s_y2_x1)
+                gradients = tape.gradient(loss, [y1, y2])
+                label_embeddings[y1_idx] = label_embeddings[y1_idx] + learning_rate * gradients[0]
+                label_embeddings[y2_idx] = label_embeddings[y1_idx] + learning_rate * gradients[1]
 
     return label_embeddings.numpy()
 

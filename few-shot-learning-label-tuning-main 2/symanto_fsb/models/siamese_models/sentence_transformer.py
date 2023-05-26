@@ -81,7 +81,7 @@ class SentenceTransformerModel(Model):
         hparams = label_tuning.find_hparams(
             example_embeddings, example_labels, label_embeddings, num_folds=4
         )["hparams"]
-        new_label_embeddings = label_tuning.label_tuning(
+        new_label_embeddings = label_tuning.label_tuning_pick2(
             example_embeddings, example_labels, label_embeddings, **hparams
         )
         for text, label_embedding in zip(
