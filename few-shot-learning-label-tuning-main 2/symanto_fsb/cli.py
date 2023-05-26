@@ -66,7 +66,7 @@ def evaluate_sentence_transformer(
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
     import tensorflow as tf
 
-    tf.config.set_visible_devices([], "GPU")
+    # tf.config.set_visible_devices([], "GPU")
 
     from experiments import run_experiments
     from models.predictors.dual_encoder import DualEncoderPredictor
