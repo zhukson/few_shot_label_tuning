@@ -185,13 +185,11 @@ def label_tuning_pick2(
 
     text_embeddings = tf.constant(text_embeddings)
     text_labels = tf.constant(text_labels)
-    label_embeddings = tf.Variable(label_embeddings)  # Variable for in-place updates
-    optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+    label_embeddings = tf.Variable(label_embeddings) # Change to Variable so it's mutable
 
     for step in range(n_steps):
         for idx1, idx2 in combinations(range(text_embeddings.shape[0]), 2):
-            with tf.GradientTape() as tape:
-                # Compute cosine similarity
+            with tf.GradientTape(persistent=True) as tape:  # Set persistent=True
                 y1_idx = tf.argmax(text_labels[idx1])
                 y2_idx = tf.argmax(text_labels[idx2])
                 y1 = tf.nn.embedding_lookup(label_embeddings, y1_idx)
@@ -201,12 +199,15 @@ def label_tuning_pick2(
                 s_y2_x1 = tf.reduce_sum(y2 * text_embeddings[idx1]) / (tf.norm(y2) * tf.norm(text_embeddings[idx1]))
 
                 if y1_idx != y2_idx:
-                    loss = s_y1_x2 + s_y2_x1
+                    loss_1 = s_y1_x2
+                    loss_2 = s_y2_x1
                 else:
-                    loss = -(s_y1_x2 + s_y2_x1)
-                gradients = tape.gradient(loss, [y1, y2])
-                label_embeddings[y1_idx] = label_embeddings[y1_idx] + learning_rate * gradients[0]
-                label_embeddings[y2_idx] = label_embeddings[y1_idx] + learning_rate * gradients[1]
+                    loss_1 = -s_y1_x2
+                    loss_2 = -s_y2_x1
+                gradients1 = tape.gradient(loss_1, y1)
+                gradients2 = tape.gradient(loss_2, y2)
+                label_embeddings[y1_idx].assign(label_embeddings[y1_idx] + learning_rate * gradients1)  # Use assign
+                label_embeddings[y2_idx].assign(label_embeddings[y2_idx] + learning_rate * gradients2)  # Use assign
 
     return label_embeddings.numpy()
 
